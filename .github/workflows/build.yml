@@ -76,7 +76,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Validate signing config
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           if [ "${{ secrets.KEYSTORE }}" = "" ]; then
             echo "::error::Signing secrets not configured. KEYSTORE secret is required for release builds."
@@ -84,7 +84,7 @@ jobs:
           fi
 
       - name: Create keystore
-        if: github.event_name != 'pull_request'
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           # app/build.gradle.kts signs with app/keystore.jks (gitignored; the README
           # documents how to generate it), so the KEYSTORE secret has to be decoded
@@ -108,10 +108,10 @@ jobs:
 
       - name: Build DFRoot APK
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            ./gradlew :app:assembleDebug
-          else
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             ./gradlew :app:assembleRelease
+          else
+            ./gradlew :app:assembleDebug
           fi
 
       - name: Stage release asset

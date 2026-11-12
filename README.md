@@ -41,12 +41,10 @@ Compatibility depends on the device's kernel and security patches. Root is **eph
 
 > [!NOTE]
 > Pre-release builds of `master` are not published to Releases. Take the **`DFRoot`** artifact of the
-> latest green [Build](https://github.com/mitschud/DirtyFrag/actions/workflows/build.yml) run: it is a
-> signed release build - the workflow restores the `KEYSTORE` secret into `app/keystore.jks` and runs
-> `assembleRelease` - and inside the artifact the APK is at
-> `app/build/outputs/apk/release/dirtyfrag.apk`. Tagged and untagged builds go through that same
-> keystore step, so a `master` build carries the released app's signing key and installs over it as an
-> update rather than a fresh install.
+> latest green [Build](https://github.com/mitschud/DirtyFrag/actions/workflows/build.yml) run. Tag
+> builds restore the `KEYSTORE` secret into `app/keystore.jks` and run `assembleRelease`, and inside the
+> artifact the release APK is at `app/build/outputs/apk/release/dirtyfrag.apk`. Untagged pushes and PRs
+> run `assembleDebug`, so the APK is at `app/build/outputs/apk/debug/dirtyfrag.apk`.
 
 A fresh install of DirtyFrag gets a new Android UID, so the grant in the manager has to be given
 again after every reinstall.
