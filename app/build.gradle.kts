@@ -42,7 +42,8 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("keystore")
+            // Keep CI/debug builds independent from release signing secrets.
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             signingConfig = signingConfigs.getByName("keystore")
