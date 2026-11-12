@@ -90,8 +90,9 @@ public class MainActivity extends Activity implements IReporter {
      *  /data/user_de/0/df.root/, so every pref the exploit depends on must live
      *  there, not in credential-protected storage. */
     private Context mDeCtx;
-    /** Package name of the SU manager whose libksud.so gets staged, or null. */
+    /** Package name of the selected KernelSU/APatch manager, or null. */
     private String suManagerPkg;
+    private String suManagerType = "kernelsu";
     private CharSequence suManagerLabel;
     /** A failed run locks the Run button until reboot (page-cache patch). */
     private boolean failedRun;
@@ -1245,53 +1246,67 @@ public class MainActivity extends Activity implements IReporter {
 
     // ---- SU manager picker --------------------------------------------------
 
-    /** One candidate: an app that actually ships libksud.so. */
+    /** One candidate: an app shipping either KernelSU's ksud or APatch's apd. */
     private static final class SuManagerEntry {
         final String packageName;
+        final String managerType;
         final CharSequence label;
 
-        SuManagerEntry(String pkg, CharSequence label) {
+        SuManagerEntry(String pkg, String type, CharSequence label) {
             this.packageName = pkg;
+            this.managerType = type;
             this.label = label;
         }
     }
 
-    /** Every installed app carrying libksud.so in its native lib dir - exactly
-     *  the set ExploitRunner.stageAssets() can use, so anything listed here is
-     *  guaranteed to pass the runtime check too. */
+    /** Scan installed native libraries and retain the concrete manager type. */
     private List<SuManagerEntry> scanSuManagers() {
         List<SuManagerEntry> out = new ArrayList<>();
         PackageManager pm = getPackageManager();
         for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
-            if (ai.packageName.equals(getPackageName())) continue;
-            if (ai.nativeLibraryDir == null) continue;
-            if (!new File(ai.nativeLibraryDir, "libksud.so").exists()) continue;
-            out.add(new SuManagerEntry(ai.packageName, pm.getApplicationLabel(ai)));
+            if (ai.packageName.equals(getPackageName()) || ai.nativeLibraryDir == null) continue;
+            File ksud = new File(ai.nativeLibraryDir, "libksud.so");
+            File apd = new File(ai.nativeLibraryDir, "libapd.so");
+            if (ksud.isFile()) {
+                out.add(new SuManagerEntry(ai.packageName, "kernelsu",
+                        pm.getApplicationLabel(ai)));
+            } else if (apd.isFile()) {
+                out.add(new SuManagerEntry(ai.packageName, "apatch",
+                        pm.getApplicationLabel(ai)));
+            }
         }
         out.sort((a, b) -> a.label.toString().compareToIgnoreCase(b.label.toString()));
         return out;
     }
 
     /** Restores the saved selection, dropping it if that app is gone or no
-     *  longer ships libksud.so. */
+     *  longer ships the selected manager executable. */
     private void loadSuManagerPref() {
         SharedPreferences sp = mDeCtx.getSharedPreferences("dfroot", MODE_PRIVATE);
         String saved = sp.getString("su_manager", null);
+        String savedType = sp.getString("manager_type", "kernelsu");
         suManagerPkg = null;
+        suManagerType = "kernelsu";
         suManagerLabel = null;
         if (saved != null) {
             for (SuManagerEntry e : scanSuManagers()) {
-                if (e.packageName.equals(saved)) {
+                if (e.packageName.equals(saved) && e.managerType.equals(savedType)) {
                     suManagerPkg = e.packageName;
+                    suManagerType = e.managerType;
                     suManagerLabel = e.label;
                     break;
                 }
             }
-            if (suManagerPkg == null) sp.edit().remove("su_manager").apply();
+            if (suManagerPkg == null) {
+                sp.edit().remove("su_manager").remove("manager_type").apply();
+            } else if (!savedType.equals(suManagerType)) {
+                sp.edit().putString("manager_type", suManagerType).apply();
+            }
         }
         binding.suManagerSubtitle.setText(suManagerPkg == null
                 ? "Not selected - required"
-                : suManagerLabel + "  (" + suManagerPkg + ")");
+                : suManagerLabel + "  (" + (suManagerType.equals("apatch") ? "APatch" : "KernelSU")
+                        + ", " + suManagerPkg + ")");
         binding.suManagerSubtitle.setTextColor(suManagerPkg == null
                 ? 0xFFE57373 : 0xFF9E9E9E);
     }
@@ -1310,7 +1325,7 @@ public class MainActivity extends Activity implements IReporter {
 
         if (apps.isEmpty()) {
             TextView none = new TextView(this);
-            none.setText("No app with libksud.so found");
+            none.setText("No app with libksud.so or libapd.so found");
             none.setGravity(android.view.Gravity.CENTER_VERTICAL | android.view.Gravity.START);
             none.setPadding((int) (20 * md), (int) (12 * md), (int) (20 * md), (int) (12 * md));
             none.setTextColor(0xFF6E6E6E);
@@ -1334,7 +1349,7 @@ public class MainActivity extends Activity implements IReporter {
             t.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15);
             line.addView(t, new android.widget.LinearLayout.LayoutParams(
                     0, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            if (e.packageName.equals(suManagerPkg)) {
+            if (e.packageName.equals(suManagerPkg) && e.managerType.equals(suManagerType)) {
                 android.view.View dot = new android.view.View(this);
                 dot.setBackgroundResource(R.drawable.dot_white);
                 android.widget.LinearLayout.LayoutParams dotLp =
@@ -1347,7 +1362,8 @@ public class MainActivity extends Activity implements IReporter {
                     android.view.ViewGroup.LayoutParams.MATCH_PARENT, (int) (26 * md)));
 
             TextView sub = new TextView(this);
-            sub.setText(e.packageName);
+            sub.setText((e.managerType.equals("apatch") ? "APatch · " : "KernelSU · ")
+                    + e.packageName);
             sub.setTextColor(0xFF8E8E8E);
             sub.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11);
             col.addView(sub);
@@ -1411,10 +1427,16 @@ public class MainActivity extends Activity implements IReporter {
     /** Writes the DE pref that bootstrap.c reads as su_manager, then unlocks Run. */
     private void selectSuManager(SuManagerEntry e) {
         mDeCtx.getSharedPreferences("dfroot", MODE_PRIVATE)
-                .edit().putString("su_manager", e.packageName).apply();
+                .edit()
+                .putString("su_manager", e.packageName)
+                .putString("manager_type", e.managerType)
+                .apply();
         suManagerPkg = e.packageName;
+        suManagerType = e.managerType;
         suManagerLabel = e.label;
-        binding.suManagerSubtitle.setText(e.label + "  (" + e.packageName + ")");
+        binding.suManagerSubtitle.setText(e.label + "  ("
+                + (suManagerType.equals("apatch") ? "APatch" : "KernelSU")
+                + ", " + e.packageName + ")");
         binding.suManagerSubtitle.setTextColor(0xFF9E9E9E);
         updateRunButton();
     }

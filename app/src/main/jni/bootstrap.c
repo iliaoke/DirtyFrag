@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,31 +27,49 @@ static int pref_true(const char *buf, const char *key)
     return v && tag_end && v < tag_end;
 }
 
-static int read_prefs(char *su_manager, size_t su_manager_size, int *soft_reboot,
-                      int *disable_modules)
+static int read_pref_string(const char *buf, const char *key, char *out, size_t out_size)
+{
+    char needle[96];
+    snprintf(needle, sizeof(needle), "name=\"%s\">", key);
+    const char *p = strstr(buf, needle);
+    if (!p) return -1;
+    p += strlen(needle);
+    const char *end = strstr(p, "</string>");
+    if (!end) return -1;
+    size_t len = (size_t)(end - p);
+    if (len == 0 || len >= out_size) return -1;
+    memcpy(out, p, len);
+    out[len] = '\0';
+    return 0;
+}
+
+static int read_prefs(char *su_manager, size_t su_manager_size,
+                      char *manager_type, size_t manager_type_size,
+                      char *apd_path, size_t apd_path_size,
+                      char *apatch_ko_path, size_t apatch_ko_path_size,
+                      int *soft_reboot, int *disable_modules)
 {
     int fd = open(PREFS_PATH, O_RDONLY);
     if (fd < 0) return -1;
 
-    char buf[4096];
+    char buf[16384];
     int n = read(fd, buf, sizeof(buf) - 1);
     close(fd);
     if (n <= 0) return -1;
     buf[n] = '\0';
 
-    char *p = strstr(buf, "name=\"su_manager\">");
-    if (!p) return -1;
-    p += strlen("name=\"su_manager\">");
-    char *end = strchr(p, '<');
-    if (!end) return -1;
-    size_t len = end - p;
-    if (len == 0 || len >= su_manager_size) return -1;
-    memcpy(su_manager, p, len);
-    su_manager[len] = '\0';
+    if (read_pref_string(buf, "su_manager", su_manager, su_manager_size) != 0)
+        return -1;
+    if (read_pref_string(buf, "manager_type", manager_type, manager_type_size) != 0)
+        snprintf(manager_type, manager_type_size, "kernelsu");
+    if (strcmp(manager_type, "apatch") == 0) {
+        if (read_pref_string(buf, "apd_path", apd_path, apd_path_size) != 0 ||
+            read_pref_string(buf, "apatch_ko_path", apatch_ko_path, apatch_ko_path_size) != 0)
+            return -1;
+    }
 
     *soft_reboot = pref_true(buf, "soft_reboot");
     *disable_modules = pref_true(buf, "disable_modules");
-
     return 0;
 }
 
@@ -209,8 +228,15 @@ int main(void)
 {
     touch("/dev/dfm1");
     char su_manager[256];
+    char manager_type[32] = "kernelsu";
+    char apd_path[PATH_MAX] = {0};
+    char apatch_ko_path[PATH_MAX] = {0};
     int soft_reboot, disable_mods;
-    if (read_prefs(su_manager, sizeof(su_manager), &soft_reboot, &disable_mods) != 0) {
+    if (read_prefs(su_manager, sizeof(su_manager),
+                   manager_type, sizeof(manager_type),
+                   apd_path, sizeof(apd_path),
+                   apatch_ko_path, sizeof(apatch_ko_path),
+                   &soft_reboot, &disable_mods) != 0) {
         touch("/dev/dfme0");
         return 1;
     }
@@ -231,12 +257,40 @@ int main(void)
         }
     }
 
-    touch("/dev/dfm5");    
-    if (run_ctx(NULL, (char *[]){ KSUD_STAGE, "late-load", "--package-name", su_manager, NULL }) == 0) {
+    touch("/dev/dfm5");
+    int manager_rc = -1;
+    if (strcmp(manager_type, "apatch") == 0) {
+        if (access(apd_path, R_OK | X_OK) == 0 &&
+            access(apatch_ko_path, R_OK) == 0 &&
+            setenv("APATCH_APD", apd_path, 1) == 0 &&
+            setenv("APATCH_KO", apatch_ko_path, 1) == 0 &&
+            setenv("APATCH_PACKAGE", su_manager, 1) == 0) {
+            /* APK assets are extracted by the app into a real file because apd
+             * late-load reads --module with fs::read(); an APK/ZIP entry is not
+             * a usable module pathname. */
+            manager_rc = run_ctx(NULL, (char *[]){
+                "/system/bin/sh", "-c",
+                "exec \"$APATCH_APD\" late-load --module \"$APATCH_KO\" --package-name \"$APATCH_PACKAGE\"",
+                NULL
+            });
+        }
+    } else {
+        manager_rc = run_ctx(NULL, (char *[]){
+            KSUD_STAGE, "late-load", "--package-name", su_manager, NULL
+        });
+    }
+
+    if (manager_rc == 0) {
         touch("/dev/dfm6");
         if (soft_reboot) {
-            while (late_load_running()) sleep(1);
-            run_ctx("u:r:ksu:s0", (char *[]){ KSUD, "soft-reboot", NULL });
+            if (strcmp(manager_type, "apatch") == 0) {
+                run_ctx(NULL, (char *[]){
+                    "/system/bin/sh", "-c", "exec \"$APATCH_APD\" soft-reboot", NULL
+                });
+            } else {
+                while (late_load_running()) sleep(1);
+                run_ctx("u:r:ksu:s0", (char *[]){ KSUD, "soft-reboot", NULL });
+            }
         }
     } else {
         touch("/dev/dfme2");
