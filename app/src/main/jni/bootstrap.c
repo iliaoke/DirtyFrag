@@ -270,7 +270,7 @@ int main(void)
              * a usable module pathname. */
             manager_rc = run_ctx(NULL, (char *[]){
                 "/system/bin/sh", "-c",
-                "exec \"$APATCH_APD\" late-load --module \"",
+                "exec \"$APATCH_APD\" late-load",
                 NULL
             });
         }
