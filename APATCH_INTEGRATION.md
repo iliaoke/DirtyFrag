@@ -12,7 +12,7 @@ This source tree adds APatch as an alternative manager while retaining the exist
 6. The child executes:
 
    ```sh
-   "$APATCH_APD" late-load --module "$APATCH_KO" --package-name "$APATCH_PACKAGE"
+   "$APATCH_APD" late-load 
    ```
 
 7. On success, the existing `/dev/dfm6` success marker is written. If soft reboot is enabled, Bootstrap calls `libapd.so soft-reboot`.
