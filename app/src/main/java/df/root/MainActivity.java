@@ -1312,16 +1312,15 @@ public class MainActivity extends Activity implements IReporter {
         }
     }
 
-    /** Every installed app carrying libksud.so in its native lib dir - exactly
-     *  the set ExploitRunner.stageAssets() can use, so anything listed here is
-     *  guaranteed to pass the runtime check too. */
+    /** Every installed app carrying libksud.so or libapd.so in its native lib dir -
+     *  exactly the set ExploitRunner.stageAssets() can use, so anything listed here
+     *  is guaranteed to pass the runtime check too. */
     private List<SuManagerEntry> scanSuManagers() {
         List<SuManagerEntry> out = new ArrayList<>();
         PackageManager pm = getPackageManager();
         for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
             if (ai.packageName.equals(getPackageName())) continue;
-            if (ai.nativeLibraryDir == null) continue;
-            if (!new File(ai.nativeLibraryDir, "libksud.so").exists()) continue;
+            if (!ExploitRunner.hasKsud(ai)) continue;
             out.add(new SuManagerEntry(ai.packageName, pm.getApplicationLabel(ai)));
         }
         out.sort((a, b) -> a.label.toString().compareToIgnoreCase(b.label.toString()));

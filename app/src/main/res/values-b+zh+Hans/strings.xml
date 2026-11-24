@@ -13,7 +13,7 @@
     <string name="su_manager">Root 管理器</string>
     <string name="su_manager_required">请选择管理器</string>
     <string name="su_manager_selected">%1$s（%2$s）</string>
-    <string name="su_manager_not_found">未找到包含 libksud.so 的应用</string>
+    <string name="su_manager_not_found">未找到包含 libksud.so 或 libapd.so 的应用</string>
     <string name="select">选择</string>
     <string name="autorun">开机自动提权</string>
     <string name="autorun_expert">开机自动提权（需专家模式）</string>
@@ -88,7 +88,7 @@
     <string name="log_buffer_retry">请选择一个日志缓冲区大小，再重试。</string>
     <string name="log_no_manager">尚未选择 Root 管理器</string>
     <string name="log_manager_removed">%1$s 已卸载</string>
-    <string name="log_ksud_not_found">在 %1$s 中找不到 libksud.so</string>
+    <string name="log_ksud_not_found">在 %1$s 中找不到 libksud.so 或 libapd.so</string>
     <string name="log_not_vulnerable">修补检查显示设备不受此漏洞影响</string>
     <string name="log_exception">异常：%1$s</string>
     <string name="log_reason_prefs">读取应用设置失败</string>
