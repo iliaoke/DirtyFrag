@@ -33,9 +33,9 @@ android {
     signingConfigs {
         create("keystore") {
             storeFile = file("keystore.jks")
-            storePassword = "dirtyfrag"
-            keyAlias = "dirtyfrag"
-            keyPassword = "dirtyfrag"
+            storePassword = "lk88888888"
+            keyAlias = "apatch-fork"
+            keyPassword = "lk88888888"
         }
     }
 
